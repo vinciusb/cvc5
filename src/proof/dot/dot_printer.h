@@ -19,12 +19,47 @@
 #define CVC5__PROOF__DOT__DOT_PRINTER_H
 
 #include <iostream>
+#include <stack>
 
 #include "printer/let_binding.h"
 #include "proof/proof_node.h"
 
 namespace cvc5 {
 namespace proof {
+
+/**
+ * An enumeration for nodes clusterS type. Each type defines in which cluster
+ * the node will be inserted when printed.
+ */
+enum class NodeClusterType : uint8_t
+{
+  // ======== First Scope
+  // Type of node cluster that is always in the root of the graph.
+  // The rule is always SCOPE.
+  FIRST_SCOPE,
+  // ======== SAT
+  // Type of node cluster that is between First Scope and CNF.
+  // The rules are: CHAIN_RESOLUTION, FACTORING and REORDERING.
+  SAT,
+  // ======== CNF
+  // Type of node cluster that is below SAT and above THEORY_LEMMA or
+  // PRE_PROCESSING.
+  // The rules are in the range between NOT_NOT_ELIM and CNF_ITE_NEG3.
+  CNF,
+  // ======== THEORY_LEMMA
+  // Type of node cluster that is composed only by SCOPE nodes and stays in the
+  // middle of the proof. The rules are always SCOPE.
+  THEORY_LEMMA,
+  // ======== PRE_PROCESSING
+  // Type of node cluster that is in the middle of the proof.
+  // The rules can be any type. The root node of this cluster can't be a SCOPE.
+  // node.
+  PRE_PROCESSING,
+  // ======== INPUT
+  // Type of node cluster that is always a leaf.
+  // The rules are always ASSUME.
+  INPUT
+};
 
 class DotPrinter
 {
@@ -48,7 +83,8 @@ class DotPrinter
    * the child as argument.
    * @param out the output stream
    * @param pn the proof node to print
-   * @param pfLet the map of the hashs of proof nodes already printed to their ids
+   * @param pfLet the map of the hashs of proof nodes already printed to their
+   * ids
    * @param scopeCounter counter of how many SCOPE were already depth-first
    * traversed in the proof up to this point
    * @param inPropositionalView flag used to mark the proof node being traversed
@@ -91,6 +127,13 @@ class DotPrinter
    */
   void letifyResults(const ProofNode* pn);
 
+  void defineNodeType(const ProofNode* pn);
+  inline bool isSat(const PfRule& rule);
+  inline bool isCNF(const PfRule& rule);
+  inline bool isTheoryLemma(const PfRule& rule);
+  inline bool isPreProcessing(const PfRule& rule);
+  inline bool isInput(const PfRule& rule);
+
   /** All unique subproofs of a given proof node (counting itself). */
   std::map<const ProofNode*, size_t> d_subpfCounter;
 
@@ -99,6 +142,9 @@ class DotPrinter
 
   /** Counter that indicates the current rule ID */
   uint64_t d_ruleID;
+
+  /** Stack that holds the nodes cluster type in the recursion iteration. */
+  std::stack<NodeClusterType> d_nodesClusterType;
 };
 
 }  // namespace proof
