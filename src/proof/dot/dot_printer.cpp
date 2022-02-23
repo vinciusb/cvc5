@@ -183,6 +183,8 @@ void DotPrinter::print(std::ostream& out, const ProofNode* pn)
 
   std::map<size_t, uint64_t> proofLet;
   DotPrinter::printInternal(out, pn, proofLet, 0, false);
+
+  // Print the sub-graphs
   out << "}\n";
 }
 
@@ -209,6 +211,9 @@ uint64_t DotPrinter::printInternal(std::ostream& out,
 
     pfLet[currentHash] = currentRuleID;
   }
+  // Define the type of this node
+  defineNodeType(pn);
+
   d_ruleID++;
 
   std::ostringstream currentArguments, resultStr, classes, colors;
@@ -278,8 +283,48 @@ uint64_t DotPrinter::printInternal(std::ostream& out,
         printInternal(out, c.get(), pfLet, scopeCounter, inPropositionalView);
     out << "\t" << childId << " -> " << currentRuleID << ";\n";
   }
+  // Remove the node type from the type stack
+  d_nodesClusterType.pop();
 
   return currentRuleID;
+}
+
+void DotPrinter::defineNodeType(const ProofNode* pn)
+{
+  // If is the first node
+  if (!d_ruleID)
+  {
+    d_nodesClusterType.push(NodeClusterType::FIRST_SCOPE);
+  }
+
+  NodeClusterType& last = d_nodesClusterType.top();
+  PfRule rule = pn->getRule();
+  // If the rule is in the SAT range and the last node was: FF or SAT
+  if (isSat(rule) && last <= NodeClusterType::SAT)
+  {
+    d_nodesClusterType.push(NodeClusterType::SAT);
+  }
+  // If the rule is in the CNF range and the last node was: FF, SAT or CNF
+  else if (isCNF(rule) && last <= NodeClusterType::CNF)
+  {
+    d_nodesClusterType.push(NodeClusterType::CNF);
+  }
+  //
+}
+
+inline bool DotPrinter::isSat(const PfRule& rule)
+{
+  return PfRule::CHAIN_RESOLUTION <= rule && rule <= PfRule::REORDERING;
+}
+
+inline bool DotPrinter::isCNF(const PfRule& rule)
+{
+  return PfRule::NOT_NOT_ELIM <= rule && rule <= PfRule::CNF_ITE_NEG3;
+}
+
+inline bool DotPrinter::isInput(const PfRule& rule)
+{
+  return PfRule::ASSUME == rule;
 }
 
 void DotPrinter::ruleArguments(std::ostringstream& currentArguments,
