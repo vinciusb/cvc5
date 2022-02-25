@@ -285,6 +285,11 @@ uint64_t DotPrinter::printInternal(std::ostream& out,
   }
   // Remove the node type from the type stack
   d_nodesClusterType.pop();
+  // If it's a scope, then remove from the stack
+  if (isSCOPE(pn->getRule()))
+  {
+    d_scopesArgs.pop_back();
+  }
 
   return currentRuleID;
 }
@@ -295,26 +300,83 @@ void DotPrinter::defineNodeType(const ProofNode* pn)
   if (!d_ruleID)
   {
     d_nodesClusterType.push(NodeClusterType::FIRST_SCOPE);
+    d_scopesArgs.push_back(&pn->getArguments());
+    return;
   }
 
   NodeClusterType& last = d_nodesClusterType.top();
   PfRule rule = pn->getRule();
+
   // If the rule is in the SAT range and the last node was: FF or SAT
   if (isSat(rule) && last <= NodeClusterType::SAT)
   {
     d_nodesClusterType.push(NodeClusterType::SAT);
   }
-  // If the rule is in the CNF range and the last node was: FF, SAT or CNF
-  else if (isCNF(rule) && last <= NodeClusterType::CNF)
+  // the last node was: FF, SAT or CNF
+  else if (last <= NodeClusterType::CNF)
   {
-    d_nodesClusterType.push(NodeClusterType::CNF);
+    // If the rule is in the CNF range
+    if (isCNF(rule))
+    {
+      d_nodesClusterType.push(NodeClusterType::CNF);
+    }
+    // If the first rule after a CNF:
+    // Is a scope
+    else if (isSCOPE(rule))
+    {
+      d_nodesClusterType.push(NodeClusterType::THEORY_LEMMA);
+      d_scopesArgs.push_back(&pn->getArguments());
+    }
+    // Is not a scope
+    else
+    {
+      d_nodesClusterType.push(NodeClusterType::PRE_PROCESSING);
+      // d_PPnodeIds.insert(d_ruleID);
+    }
   }
+  else if (isASSUME(rule))
+  {
+    if (isInput(pn))
+    {
+      d_nodesClusterType.push(NodeClusterType::INPUT);
+    }
+    //
+    else
+    {
+    }
+  }
+  // If the last rule was a pre processing
+  else if (last == NodeClusterType::PRE_PROCESSING)
+  {
+    d_nodesClusterType.push(NodeClusterType::PRE_PROCESSING);
+  }
+  // If the current rule is a SCOPE
+  else if (last == NodeClusterType::THEORY_LEMMA)
+  {
+    d_nodesClusterType.push(NodeClusterType::THEORY_LEMMA);
+  }
+}
+
+inline bool DotPrinter::isInput(const ProofNode* pn)
+{
+  auto& args = pn->getArguments();
+
   //
+  for (auto i : args)
+  {
+    // Verifies if the arg is in the first scope
+    const std::vector<cvc5::Node>* fsArgs = d_scopesArgs[0];
+    for (auto& arg : *fsArgs)
+    {
+    }
+  }
+  return false;
 }
 
 inline bool DotPrinter::isSat(const PfRule& rule)
 {
-  return PfRule::CHAIN_RESOLUTION <= rule && rule <= PfRule::REORDERING;
+  return PfRule::CHAIN_RESOLUTION <= rule
+         && rule <= PfRule::MACRO_RESOLUTION_TRUST;
 }
 
 inline bool DotPrinter::isCNF(const PfRule& rule)
@@ -322,7 +384,12 @@ inline bool DotPrinter::isCNF(const PfRule& rule)
   return PfRule::NOT_NOT_ELIM <= rule && rule <= PfRule::CNF_ITE_NEG3;
 }
 
-inline bool DotPrinter::isInput(const PfRule& rule)
+inline bool DotPrinter::isSCOPE(const PfRule& rule)
+{
+  return PfRule::SCOPE == rule;
+}
+
+inline bool DotPrinter::isASSUME(const PfRule& rule)
 {
   return PfRule::ASSUME == rule;
 }

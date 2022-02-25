@@ -130,9 +130,10 @@ class DotPrinter
   void defineNodeType(const ProofNode* pn);
   inline bool isSat(const PfRule& rule);
   inline bool isCNF(const PfRule& rule);
-  inline bool isTheoryLemma(const PfRule& rule);
+  inline bool isSCOPE(const PfRule& rule);
   inline bool isPreProcessing(const PfRule& rule);
-  inline bool isInput(const PfRule& rule);
+  inline bool isASSUME(const PfRule& rule);
+  inline bool isInput(const ProofNode* pn);
 
   /** All unique subproofs of a given proof node (counting itself). */
   std::map<const ProofNode*, size_t> d_subpfCounter;
@@ -145,6 +146,12 @@ class DotPrinter
 
   /** Stack that holds the nodes cluster type in the recursion iteration. */
   std::stack<NodeClusterType> d_nodesClusterType;
+
+  /** Stack that holds all the scopes args */
+  std::vector<const std::vector<cvc5::Node>*> d_scopesArgs;
+
+  /**  */
+  // std::set<uint64_t> d_PPnodeIds;
 };
 
 }  // namespace proof
