@@ -32,9 +32,19 @@ DotPrinter::DotPrinter()
                                           : 0),
       d_ruleID(0)
 {
+  const std::string acronyms[5] = {"SAT", "CNF", "TL", "PP", "IN"};
+  const std::string colors[5] = {"purple", "yellow", "green", "brown", "blue"};
+  d_subgraphsStr = new std::ostringstream[5]();
+
+  for (int i = 0; i < 5; i++)
+  {
+    d_subgraphsStr[i] << "\n\tsubgraph cluster_" << acronyms[i]
+                      << " {\n\t\tlabel=\"" << acronyms[i]
+                      << "\"\n\t\tbgcolor=\"" << colors[i] << "\"\n\t\t";
+  }
 }
 
-DotPrinter::~DotPrinter() {}
+DotPrinter::~DotPrinter() { delete[] d_subgraphsStr; }
 
 std::string DotPrinter::sanitizeStringDoubleQuotes(const std::string& s)
 {
@@ -185,6 +195,10 @@ void DotPrinter::print(std::ostream& out, const ProofNode* pn)
   DotPrinter::printInternal(out, pn, proofLet, 0, false);
 
   // Print the sub-graphs
+  for (int i = 0; i < 5; i++)
+  {
+    out << d_subgraphsStr[i].str() << "\n\t}";
+  }
   out << "}\n";
 }
 
@@ -211,8 +225,15 @@ uint64_t DotPrinter::printInternal(std::ostream& out,
 
     pfLet[currentHash] = currentRuleID;
   }
+
   // Define the type of this node
   defineNodeType(pn);
+  // Register the node in the respective cluster
+  NodeClusterType& nodeType = d_nodesClusterType.top();
+  if (nodeType != NodeClusterType::FIRST_SCOPE)
+  {
+    d_subgraphsStr[(int)nodeType - 1] << d_ruleID << ";";
+  }
 
   d_ruleID++;
 
@@ -286,7 +307,7 @@ uint64_t DotPrinter::printInternal(std::ostream& out,
   // Remove the node type from the type stack
   d_nodesClusterType.pop();
   // If it's a scope, then remove from the stack
-  if (isSCOPE(pn->getRule()))
+  if (isSCOPE(r))
   {
     d_scopesArgs.pop_back();
   }
@@ -312,7 +333,19 @@ void DotPrinter::defineNodeType(const ProofNode* pn)
   {
     d_nodesClusterType.push(NodeClusterType::SAT);
   }
-  // the last node was: FF, SAT or CNF
+  // If is a ASSUME
+  else if (isASSUME(rule))
+  {
+    if (isInput(pn))
+    {
+      d_nodesClusterType.push(NodeClusterType::INPUT);
+    }
+    else
+    {
+      d_nodesClusterType.push(last);
+    }
+  }
+  // the last node was: FS, SAT or CNF
   else if (last <= NodeClusterType::CNF)
   {
     // If the rule is in the CNF range
@@ -320,8 +353,7 @@ void DotPrinter::defineNodeType(const ProofNode* pn)
     {
       d_nodesClusterType.push(NodeClusterType::CNF);
     }
-    // If the first rule after a CNF:
-    // Is a scope
+    // If the first rule after a CNF is a scope
     else if (isSCOPE(rule))
     {
       d_nodesClusterType.push(NodeClusterType::THEORY_LEMMA);
@@ -331,26 +363,14 @@ void DotPrinter::defineNodeType(const ProofNode* pn)
     else
     {
       d_nodesClusterType.push(NodeClusterType::PRE_PROCESSING);
-      // d_PPnodeIds.insert(d_ruleID);
     }
   }
-  else if (isASSUME(rule))
-  {
-    if (isInput(pn))
-    {
-      d_nodesClusterType.push(NodeClusterType::INPUT);
-    }
-    //
-    else
-    {
-    }
-  }
-  // If the last rule was a pre processing
+  // If the last rule was pre processing
   else if (last == NodeClusterType::PRE_PROCESSING)
   {
     d_nodesClusterType.push(NodeClusterType::PRE_PROCESSING);
   }
-  // If the current rule is a SCOPE
+  // If the last rule was theory lemma
   else if (last == NodeClusterType::THEORY_LEMMA)
   {
     d_nodesClusterType.push(NodeClusterType::THEORY_LEMMA);
@@ -359,18 +379,42 @@ void DotPrinter::defineNodeType(const ProofNode* pn)
 
 inline bool DotPrinter::isInput(const ProofNode* pn)
 {
-  auto& args = pn->getArguments();
+  auto& thisAssumeArg = pn->getArguments()[0];
+  auto args = d_scopesArgs[0];
 
-  //
-  for (auto i : args)
+  // Verifies if all args of this assume are in the first scope
+  bool found = false;
+  // Each arg in the first scope
+  for (auto& arg : *args)
   {
-    // Verifies if the arg is in the first scope
-    const std::vector<cvc5::Node>* fsArgs = d_scopesArgs[0];
-    for (auto& arg : *fsArgs)
+    if (thisAssumeArg == arg)
     {
+      found = true;
+      break;
     }
   }
-  return false;
+  // If thisArg isn't in the first scope
+  if (!found)
+  {
+    return false;
+  }
+
+  // Verifies if any arg of this assume is at any of the other scopes
+  // For all other scopes
+  for (size_t i = 1; i < d_scopesArgs.size(); i++)
+  {
+    args = d_scopesArgs[i];
+    // Each arg in the scope
+    for (auto& arg : *args)
+    {
+      if (thisAssumeArg == arg)
+      {
+        return false;
+      }
+    }
+  }
+
+  return true;
 }
 
 inline bool DotPrinter::isSat(const PfRule& rule)
