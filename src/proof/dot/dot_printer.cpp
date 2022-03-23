@@ -199,7 +199,7 @@ void DotPrinter::print(std::ostream& out, const ProofNode* pn)
   {
     out << d_subgraphsStr[i].str() << "\n\t}";
   }
-  out << "}\n";
+  out << "\n}\n";
 }
 
 uint64_t DotPrinter::printInternal(std::ostream& out,
