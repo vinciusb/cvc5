@@ -197,7 +197,7 @@ void DotPrinter::print(std::ostream& out, const ProofNode* pn)
   // Print the sub-graphs
   for (int i = 0; i < 5; i++)
   {
-    out << d_subgraphsStr[i].str() << "\n\t}";
+    out << d_subgraphsStr[i].str() << "\n\t};";
   }
   out << "\n}\n";
 }
@@ -232,7 +232,7 @@ uint64_t DotPrinter::printInternal(std::ostream& out,
   NodeClusterType& nodeType = d_nodesClusterType.top();
   if (nodeType != NodeClusterType::FIRST_SCOPE)
   {
-    d_subgraphsStr[(int)nodeType - 1] << d_ruleID << ";";
+    d_subgraphsStr[(int)nodeType - 1] << d_ruleID << " ";
   }
 
   d_ruleID++;

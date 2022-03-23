@@ -123,15 +123,44 @@ class DotPrinter
 
   /** Traverse proof node and populate d_lbind
    *
-   * @param pn the proof node to be traversed
+   * @param pn The proof node to be traversed
    */
   void letifyResults(const ProofNode* pn);
 
+  /** Define the proof node type and populate d_nodesClusterType and
+   * d_scopesArgs.
+   * @param pn The proof node to categorized.
+   */
   void defineNodeType(const ProofNode* pn);
+
+  /** Verify if the proof node is an input node
+   * @param pn The proof node to be verified.
+   * @return The bool indicating if the proof node is or not an input.
+   */
   inline bool isInput(const ProofNode* pn);
+
+  /** Verify if the rule is in the SAT range
+   * @param pn The rule to be verified.
+   * @return The bool indicating if the rule is or not in the SAT range.
+   */
   inline bool isSat(const PfRule& rule);
+
+  /** Verify if the rule is in the CNF range
+   * @param pn The rule to be verified.
+   * @return The bool indicating if the rule is or not in the CNF range.
+   */
   inline bool isCNF(const PfRule& rule);
+
+  /** Verify if the rule is a SCOPE
+   * @param pn The rule to be verified.
+   * @return The bool indicating if the rule is or not a SCOPE.
+   */
   inline bool isSCOPE(const PfRule& rule);
+
+  /** Verify if the rule is a ASSUME
+   * @param pn The rule to be verified.
+   * @return The bool indicating if the rule is or not an ASSUME.
+   */
   inline bool isASSUME(const PfRule& rule);
 
   /** All unique subproofs of a given proof node (counting itself). */
@@ -143,10 +172,10 @@ class DotPrinter
   /** Counter that indicates the current rule ID */
   uint64_t d_ruleID;
 
-  /** Stack that holds the nodes cluster type in the recursion iteration. */
+  /** Stack that holds the nodes cluster type in the recursive iteration. */
   std::stack<NodeClusterType> d_nodesClusterType;
 
-  /** Stack that holds all the scopes args */
+  /** Vector that holds all the scopes args */
   std::vector<const std::vector<cvc5::Node>*> d_scopesArgs;
 
   /** Array with all the subgraphs description strings */
