@@ -15,9 +15,11 @@
 
 #include "proof/dot/dot_printer.h"
 
+#include <algorithm>
 #include <sstream>
 
 #include "options/expr_options.h"
+#include "options/printer_options.h"
 #include "options/proof_options.h"
 #include "printer/smt2/smt2_printer.h"
 #include "proof/proof_checker.h"
@@ -34,7 +36,7 @@ DotPrinter::DotPrinter()
 {
   const std::string acronyms[5] = {"SAT", "CNF", "TL", "PP", "IN"};
   const std::string colors[5] = {"purple", "yellow", "green", "brown", "blue"};
-  d_subgraphsStr = new std::ostringstream[5]();
+  d_subgraphsStr = new std::ostringstream[5];
 
   for (int i = 0; i < 5; i++)
   {
@@ -192,12 +194,16 @@ void DotPrinter::print(std::ostream& out, const ProofNode* pn)
   }
 
   std::map<size_t, uint64_t> proofLet;
+  // Criar um cfaMap (zulip)
   DotPrinter::printInternal(out, pn, proofLet, 0, false);
 
-  // Print the sub-graphs
-  for (int i = 0; i < 5; i++)
+  if (options::printDotClusters())
   {
-    out << d_subgraphsStr[i].str() << "\n\t};";
+    // Print the sub-graphs
+    for (int i = 0; i < 5; i++)
+    {
+      out << d_subgraphsStr[i].str() << "\n\t};";
+    }
   }
   out << "\n}\n";
 }
@@ -222,17 +228,21 @@ uint64_t DotPrinter::printInternal(std::ostream& out,
     {
       return proofIt->second;
     }
-
+    // !expr::containsAssumption(cur.get(), cfaMap)
     pfLet[currentHash] = currentRuleID;
   }
 
-  // Define the type of this node
-  defineNodeType(pn);
-  // Register the node in the respective cluster
-  NodeClusterType& nodeType = d_nodesClusterType.top();
-  if (nodeType != NodeClusterType::FIRST_SCOPE)
+  // Print the node clusters
+  if (options::printDotClusters())
   {
-    d_subgraphsStr[(int)nodeType - 1] << d_ruleID << " ";
+    // Define the type of this node
+    defineNodeType(pn);
+    // Register the node in the respective cluster
+    NodeClusterType& nodeType = d_nodesClusterType.top();
+    if (nodeType != NodeClusterType::FIRST_SCOPE)
+    {
+      d_subgraphsStr[(int)nodeType - 1] << d_ruleID << " ";
+    }
   }
 
   d_ruleID++;
@@ -297,6 +307,7 @@ uint64_t DotPrinter::printInternal(std::ostream& out,
   out << ", comment = \"{\\\"subProofQty\\\":" << it->second << "}\"";
   out << " ];\n";
 
+  // pfLet novo
   const std::vector<std::shared_ptr<ProofNode>>& children = pn->getChildren();
   for (const std::shared_ptr<ProofNode>& c : children)
   {
@@ -304,14 +315,17 @@ uint64_t DotPrinter::printInternal(std::ostream& out,
         printInternal(out, c.get(), pfLet, scopeCounter, inPropositionalView);
     out << "\t" << childId << " -> " << currentRuleID << ";\n";
   }
-  // Remove the node type from the type stack
-  d_nodesClusterType.pop();
-  // If it's a scope, then remove from the stack
-  if (isSCOPE(r))
-  {
-    d_scopesArgs.pop_back();
-  }
 
+  if (options::printDotClusters())
+  {
+    // Remove the node type from the type stack
+    d_nodesClusterType.pop();
+    // If it's a scope, then remove from the stack
+    if (isSCOPE(r))
+    {
+      d_scopesArgs.pop_back();
+    }
+  }
   return currentRuleID;
 }
 
@@ -321,7 +335,7 @@ void DotPrinter::defineNodeType(const ProofNode* pn)
   if (!d_ruleID)
   {
     d_nodesClusterType.push(NodeClusterType::FIRST_SCOPE);
-    d_scopesArgs.push_back(&pn->getArguments());
+    d_scopesArgs.push_back(pn->getArguments());
     return;
   }
 
@@ -357,7 +371,6 @@ void DotPrinter::defineNodeType(const ProofNode* pn)
     else if (isSCOPE(rule))
     {
       d_nodesClusterType.push(NodeClusterType::THEORY_LEMMA);
-      d_scopesArgs.push_back(&pn->getArguments());
     }
     // Is not a scope
     else
@@ -375,42 +388,34 @@ void DotPrinter::defineNodeType(const ProofNode* pn)
   {
     d_nodesClusterType.push(NodeClusterType::THEORY_LEMMA);
   }
+
+  if (isSCOPE(rule))
+  {
+    d_scopesArgs.push_back(pn->getArguments());
+  }
 }
 
 inline bool DotPrinter::isInput(const ProofNode* pn)
 {
   auto& thisAssumeArg = pn->getArguments()[0];
-  auto args = d_scopesArgs[0];
+  auto& firstScope = d_scopesArgs[0].get();
 
   // Verifies if all args of this assume are in the first scope
-  bool found = false;
-  // Each arg in the first scope
-  for (auto& arg : *args)
-  {
-    if (thisAssumeArg == arg)
-    {
-      found = true;
-      break;
-    }
-  }
-  // If thisArg isn't in the first scope
-  if (!found)
+  auto it = std::find(firstScope.begin(), firstScope.end(), thisAssumeArg);
+  if (it == firstScope.end())
   {
     return false;
   }
 
   // Verifies if any arg of this assume is at any of the other scopes
-  // For all other scopes
-  for (size_t i = 1; i < d_scopesArgs.size(); i++)
+  for (int i = d_scopesArgs.size() - 1; i > 0; i--)
   {
-    args = d_scopesArgs[i];
-    // Each arg in the scope
-    for (auto& arg : *args)
+    auto& args = d_scopesArgs[i].get();
+    it = std::find(args.begin(), args.end(), thisAssumeArg);
+
+    if (it != args.end())
     {
-      if (thisAssumeArg == arg)
-      {
-        return false;
-      }
+      return false;
     }
   }
 
