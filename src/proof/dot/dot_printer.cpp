@@ -23,6 +23,7 @@
 #include "options/proof_options.h"
 #include "printer/smt2/smt2_printer.h"
 #include "proof/proof_checker.h"
+#include "proof/proof_node_algorithm.h"
 #include "proof/proof_node_manager.h"
 #include "theory/builtin/proof_checker.h"
 
@@ -193,10 +194,9 @@ void DotPrinter::print(std::ostream& out, const ProofNode* pn)
     out << "}}\";\n";
   }
 
-  //  pfLet
   std::map<size_t, uint64_t> proofLet;
-  // Criar um cfaMap (zulip)
-  DotPrinter::printInternal(out, pn, &proofLet, 0, false);
+  std::unordered_map<const ProofNode*, bool> cfaMap;
+  DotPrinter::printInternal(out, pn, proofLet, cfaMap, 0, false);
 
   if (options::printDotClusters())
   {
@@ -209,11 +209,13 @@ void DotPrinter::print(std::ostream& out, const ProofNode* pn)
   out << "\n}\n";
 }
 
-uint64_t DotPrinter::printInternal(std::ostream& out,
-                                   const ProofNode* pn,
-                                   std::map<size_t, uint64_t>* pfLet,
-                                   uint64_t scopeCounter,
-                                   bool inPropositionalView)
+uint64_t DotPrinter::printInternal(
+    std::ostream& out,
+    const ProofNode* pn,
+    std::map<size_t, uint64_t>& pfLet,
+    std::unordered_map<const ProofNode*, bool>& cfaMap,
+    uint64_t scopeCounter,
+    bool inPropositionalView)
 {
   uint64_t currentRuleID = d_ruleID;
 
@@ -222,15 +224,18 @@ uint64_t DotPrinter::printInternal(std::ostream& out,
   {
     ProofNodeHashFunction hasher;
     size_t currentHash = hasher(pn);
-    auto proofIt = pfLet->find(currentHash);
+    auto proofIt = pfLet.find(currentHash);
 
-    // If this node has been already counted
-    if (proofIt != pfLet->end())
+    if (!expr::containsAssumption(pn, cfaMap))
     {
-      return proofIt->second;
+      // If this node has been already counted
+      if (proofIt != pfLet.end())
+      {
+        return proofIt->second;
+      }
     }
-    // !expr::containsAssumption(cur.get(), cfaMap)
-    (*pfLet)[currentHash] = currentRuleID;
+
+    pfLet[currentHash] = currentRuleID;
   }
 
   // Print the node clusters
@@ -250,20 +255,11 @@ uint64_t DotPrinter::printInternal(std::ostream& out,
 
   printNodeInfo(out, pn, currentRuleID, scopeCounter, inPropositionalView);
 
-  PfRule r = pn->getRule();
-  std::map<size_t, uint64_t>* curPfLet = pfLet;
-  // create a new pfLet
-  if (isSCOPE(r) && currentRuleID)
-  {
-    std::map<size_t, uint64_t> newPfLet;
-    curPfLet = &newPfLet;
-  }
-
   const std::vector<std::shared_ptr<ProofNode>>& children = pn->getChildren();
   for (const std::shared_ptr<ProofNode>& c : children)
   {
     uint64_t childId = printInternal(
-        out, c.get(), curPfLet, scopeCounter, inPropositionalView);
+        out, c.get(), pfLet, cfaMap, scopeCounter, inPropositionalView);
     out << "\t" << childId << " -> " << currentRuleID << ";\n";
   }
 
@@ -272,7 +268,7 @@ uint64_t DotPrinter::printInternal(std::ostream& out,
     // Remove the node type from the type stack
     d_nodesClusterType.pop();
     // If it's a scope, then remove from the stack
-    if (isSCOPE(r))
+    if (isSCOPE(pn->getRule()))
     {
       d_scopesArgs.pop_back();
     }
