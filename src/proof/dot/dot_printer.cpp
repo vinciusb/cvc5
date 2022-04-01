@@ -226,13 +226,10 @@ uint64_t DotPrinter::printInternal(
     size_t currentHash = hasher(pn);
     auto proofIt = pfLet.find(currentHash);
 
-    if (!expr::containsAssumption(pn, cfaMap))
+    // If this node has been already counted
+    if (proofIt != pfLet.end() && !expr::containsAssumption(pn, cfaMap))
     {
-      // If this node has been already counted
-      if (proofIt != pfLet.end())
-      {
-        return proofIt->second;
-      }
+      return proofIt->second;
     }
 
     pfLet[currentHash] = currentRuleID;
