@@ -83,8 +83,10 @@ class DotPrinter
    * the child as argument.
    * @param out the output stream
    * @param pn the proof node to print
-   * @param pfLet the map of the hashs of proof nodes already printed to their
-   * ids
+   * @param pfLetClosed the map of the hashs of proof nodes already printed to
+   * their ids in the whole proof
+   * @param pfLetOpen the map of the hashs of proof nodes already printed to
+   * their ids in the current scope
    * @param cfaMap the map from proof nodes to whether they contain assumptions
    * @param scopeCounter counter of how many SCOPE were already depth-first
    * traversed in the proof up to this point
@@ -94,7 +96,8 @@ class DotPrinter
    */
   uint64_t printInternal(std::ostream& out,
                          const ProofNode* pn,
-                         std::map<size_t, uint64_t>& pfLet,
+                         std::map<size_t, uint64_t>& pfLetClosed,
+                         std::map<size_t, uint64_t>& pfLetOpen,
                          std::unordered_map<const ProofNode*, bool>& cfaMap,
                          uint64_t scopeCounter,
                          bool inPropositionalView);
