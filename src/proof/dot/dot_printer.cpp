@@ -198,7 +198,14 @@ void DotPrinter::print(std::ostream& out, const ProofNode* pn)
   std::map<size_t, uint64_t> firstScopeLet;
   std::unordered_map<const ProofNode*, bool> cfaMap;
 
-  DotPrinter::printInternal(out, pn, proofLet, firstScopeLet, cfaMap, 0, false);
+  DotPrinter::printInternal(out,
+                            pn,
+                            proofLet,
+                            firstScopeLet,
+                            cfaMap,
+                            NodeClusterType::NOT_DEFINED,
+                            0,
+                            false);
 
   if (options::printDotClusters())
   {
@@ -217,6 +224,7 @@ uint64_t DotPrinter::printInternal(
     std::map<size_t, uint64_t>& pfLetClosed,
     std::map<size_t, uint64_t>& pfLetOpen,
     std::unordered_map<const ProofNode*, bool>& cfaMap,
+    NodeClusterType parentType,
     uint64_t scopeCounter,
     bool inPropositionalView)
 {
@@ -230,29 +238,26 @@ uint64_t DotPrinter::printInternal(
     auto proofIt = pfLetClosed.find(currentHash);
     auto openProofIt = pfLetOpen.find(currentHash);
 
-    // pflet do escopo
     if (openProofIt != pfLetOpen.end())
     {
       return proofIt->second;
     }
     pfLetOpen[currentHash] = currentRuleID;
 
-    // If this node has been already counted
+    // If this node has been already visited
     if (proofIt != pfLetClosed.end() && !expr::containsAssumption(pn, cfaMap))
     {
       return proofIt->second;
     }
-
     pfLetClosed[currentHash] = currentRuleID;
   }
 
+  NodeClusterType nodeType = NodeClusterType::NOT_DEFINED;
   // Print the node clusters
   if (options::printDotClusters())
   {
     // Define the type of this node
-    defineNodeType(pn);
-    // Register the node in the respective cluster
-    NodeClusterType& nodeType = d_nodesClusterType.top();
+    nodeType = defineNodeType(pn, parentType);
     if (nodeType != NodeClusterType::FIRST_SCOPE)
     {
       d_subgraphsStr[(int)nodeType - 1] << d_ruleID << " ";
@@ -264,7 +269,6 @@ uint64_t DotPrinter::printInternal(
   printNodeInfo(out, pn, currentRuleID, scopeCounter, inPropositionalView);
 
   PfRule r = pn->getRule();
-
   // Deal with new scopes or not
   if (isSCOPE(r) && currentRuleID)
   {
@@ -275,6 +279,7 @@ uint64_t DotPrinter::printInternal(
                                      pfLetClosed,
                                      thisScopeLet,
                                      cfaMap,
+                                     nodeType,
                                      scopeCounter,
                                      inPropositionalView);
     out << "\t" << childId << " -> " << currentRuleID << ";\n";
@@ -289,21 +294,17 @@ uint64_t DotPrinter::printInternal(
                                        pfLetClosed,
                                        pfLetOpen,
                                        cfaMap,
+                                       nodeType,
                                        scopeCounter,
                                        inPropositionalView);
       out << "\t" << childId << " -> " << currentRuleID << ";\n";
     }
   }
 
-  if (options::printDotClusters())
+  // If it's a scope, then remove from the stack
+  if (isSCOPE(r) && options::printDotClusters())
   {
-    // Remove the node type from the type stack
-    d_nodesClusterType.pop();
-    // If it's a scope, then remove from the stack
-    if (isSCOPE(r))
-    {
-      d_scopesArgs.pop_back();
-    }
+    d_scopesArgs.pop_back();
   }
 
   return currentRuleID;
@@ -375,34 +376,36 @@ void DotPrinter::printNodeInfo(std::ostream& out,
   out << ", comment = \"{\\\"subProofQty\\\":" << it->second << "}\" ];\n";
 }
 
-void DotPrinter::defineNodeType(const ProofNode* pn)
+NodeClusterType DotPrinter::defineNodeType(const ProofNode* pn,
+                                           NodeClusterType last)
 {
+  PfRule rule = pn->getRule();
+  if (isSCOPE(rule))
+  {
+    d_scopesArgs.push_back(pn->getArguments());
+  }
+
   // If is the first node
   if (!d_ruleID)
   {
-    d_nodesClusterType.push(NodeClusterType::FIRST_SCOPE);
-    d_scopesArgs.push_back(pn->getArguments());
-    return;
+    return NodeClusterType::FIRST_SCOPE;
   }
-
-  NodeClusterType& last = d_nodesClusterType.top();
-  PfRule rule = pn->getRule();
 
   // If the rule is in the SAT range and the last node was: FF or SAT
   if (isSat(rule) && last <= NodeClusterType::SAT)
   {
-    d_nodesClusterType.push(NodeClusterType::SAT);
+    return NodeClusterType::SAT;
   }
   // If is a ASSUME
   else if (isASSUME(rule))
   {
     if (isInput(pn))
     {
-      d_nodesClusterType.push(NodeClusterType::INPUT);
+      return NodeClusterType::INPUT;
     }
     else
     {
-      d_nodesClusterType.push(last);
+      return last;
     }
   }
   // the last node was: FS, SAT or CNF
@@ -411,34 +414,31 @@ void DotPrinter::defineNodeType(const ProofNode* pn)
     // If the rule is in the CNF range
     if (isCNF(rule))
     {
-      d_nodesClusterType.push(NodeClusterType::CNF);
+      return NodeClusterType::CNF;
     }
     // If the first rule after a CNF is a scope
     else if (isSCOPE(rule))
     {
-      d_nodesClusterType.push(NodeClusterType::THEORY_LEMMA);
+      return NodeClusterType::THEORY_LEMMA;
     }
     // Is not a scope
     else
     {
-      d_nodesClusterType.push(NodeClusterType::PRE_PROCESSING);
+      return NodeClusterType::PRE_PROCESSING;
     }
   }
   // If the last rule was pre processing
   else if (last == NodeClusterType::PRE_PROCESSING)
   {
-    d_nodesClusterType.push(NodeClusterType::PRE_PROCESSING);
+    return NodeClusterType::PRE_PROCESSING;
   }
   // If the last rule was theory lemma
   else if (last == NodeClusterType::THEORY_LEMMA)
   {
-    d_nodesClusterType.push(NodeClusterType::THEORY_LEMMA);
+    return NodeClusterType::THEORY_LEMMA;
   }
 
-  if (isSCOPE(rule))
-  {
-    d_scopesArgs.push_back(pn->getArguments());
-  }
+  return NodeClusterType::NOT_DEFINED;
 }
 
 inline bool DotPrinter::isInput(const ProofNode* pn)

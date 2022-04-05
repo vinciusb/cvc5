@@ -58,7 +58,9 @@ enum class NodeClusterType : uint8_t
   // ======== INPUT
   // Type of node cluster that is always a leaf.
   // The rules are always ASSUME.
-  INPUT
+  INPUT,
+  // ======== NOT_DEFINED
+  NOT_DEFINED
 };
 
 class DotPrinter
@@ -88,6 +90,7 @@ class DotPrinter
    * @param pfLetOpen the map of the hashs of proof nodes already printed to
    * their ids in the current scope
    * @param cfaMap the map from proof nodes to whether they contain assumptions
+   * @param parentType the type of the parent node
    * @param scopeCounter counter of how many SCOPE were already depth-first
    * traversed in the proof up to this point
    * @param inPropositionalView flag used to mark the proof node being traversed
@@ -99,6 +102,7 @@ class DotPrinter
                          std::map<size_t, uint64_t>& pfLetClosed,
                          std::map<size_t, uint64_t>& pfLetOpen,
                          std::unordered_map<const ProofNode*, bool>& cfaMap,
+                         NodeClusterType parentType,
                          uint64_t scopeCounter,
                          bool inPropositionalView);
 
@@ -153,8 +157,9 @@ class DotPrinter
   /** Define the proof node type and populate d_nodesClusterType and
    * d_scopesArgs.
    * @param pn The proof node to categorized.
+   * @return the current node type
    */
-  void defineNodeType(const ProofNode* pn);
+  NodeClusterType defineNodeType(const ProofNode* pn, NodeClusterType last);
 
   /** Verify if the proof node is an input node
    * @param pn The proof node to be verified.
@@ -194,9 +199,6 @@ class DotPrinter
 
   /** Counter that indicates the current rule ID */
   uint64_t d_ruleID;
-
-  /** Stack that holds the nodes cluster type in the recursive iteration. */
-  std::stack<NodeClusterType> d_nodesClusterType;
 
   /** Vector that holds all the scopes args */
   std::vector<std::reference_wrapper<const std::vector<cvc5::Node>>>
