@@ -103,6 +103,7 @@ class DotPrinter
                          std::map<size_t, uint64_t>& pfLetClosed,
                          std::map<size_t, uint64_t>& pfLetOpen,
                          std::unordered_map<const ProofNode*, bool>& cfaMap,
+                         std::vector<size_t>& ancestors,
                          ProofNodeClusterType parentType);
 
   /**

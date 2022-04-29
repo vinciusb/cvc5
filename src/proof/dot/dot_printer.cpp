@@ -197,12 +197,14 @@ void DotPrinter::print(std::ostream& out, const ProofNode* pn)
   std::map<size_t, uint64_t> proofLet;
   std::map<size_t, uint64_t> firstScopeLet;
   std::unordered_map<const ProofNode*, bool> cfaMap;
+  std::vector<size_t> ancestors;
 
   DotPrinter::printInternal(out,
                             pn,
                             proofLet,
                             firstScopeLet,
                             cfaMap,
+                            ancestors,
                             ProofNodeClusterType::NOT_DEFINED);
 
   if (options::printDotClusters())
@@ -222,6 +224,7 @@ uint64_t DotPrinter::printInternal(
     std::map<size_t, uint64_t>& pfLetClosed,
     std::map<size_t, uint64_t>& pfLetOpen,
     std::unordered_map<const ProofNode*, bool>& cfaMap,
+    std::vector<size_t>& ancestors,
     ProofNodeClusterType parentType)
 {
   uint64_t currentRuleID = d_ruleID;
@@ -233,32 +236,42 @@ uint64_t DotPrinter::printInternal(
     std::cout << 'a' << n299 << filhoN299;
   }
 
+  size_t currentHash;
   // Print DAG option enabled
   if (options::proofDotDAG())
   {
     ProofNodeHashFunction hasher;
-    size_t currentHash = hasher(pn);
-    auto openProofIt = pfLetOpen.find(currentHash);
+    currentHash = hasher(pn);
+    // we only consider sharing when this would not introduce a cycle, which
+    // would be the case if this hash is occurring under a proof node with the
+    // same hash (this can happen since our hash computation does not take into
+    // account all the information, the limit of hash representation
+    // notwithstanding)
+    if (std::find(ancestors.begin(), ancestors.end(), currentHash)
+        == ancestors.end())
+    {
+      auto openProofIt = pfLetOpen.find(currentHash);
 
-    if (openProofIt != pfLetOpen.end())
-    {
-      return openProofIt->second;
-    }
+      if (openProofIt != pfLetOpen.end())
+      {
+        return openProofIt->second;
+      }
 
-    auto proofIt = pfLetClosed.find(currentHash);
-    // If this node has been already saved to the global cache of closed proof
-    // nodes
-    if (proofIt != pfLetClosed.end())
-    {
-      Assert(!expr::containsAssumption(pn, cfaMap));
-      return proofIt->second;
+      auto proofIt = pfLetClosed.find(currentHash);
+      // If this node has been already saved to the global cache of closed proof
+      // nodes
+      if (proofIt != pfLetClosed.end())
+      {
+        Assert(!expr::containsAssumption(pn, cfaMap));
+        return proofIt->second;
+      }
+      // If this proof node is closed, we add it to the global cache
+      if (!expr::containsAssumption(pn, cfaMap))
+      {
+        pfLetClosed[currentHash] = currentRuleID;
+      }
+      pfLetOpen[currentHash] = currentRuleID;
     }
-    // If this proof node is closed, we add it to the global cache
-    if (!expr::containsAssumption(pn, cfaMap))
-    {
-      pfLetClosed[currentHash] = currentRuleID;
-    }
-    pfLetOpen[currentHash] = currentRuleID;
   }
 
   ProofNodeClusterType proofNodeType = ProofNodeClusterType::NOT_DEFINED;
@@ -276,9 +289,13 @@ uint64_t DotPrinter::printInternal(
   printProofNodeInfo(out, pn);
 
   d_ruleID++;
-
+  if (options::proofDotDAG())
+  {
+    ancestors.push_back(currentHash);
+  }
   PfRule r = pn->getRule();
 
+  size_t currentAncestorsSize = ancestors.size();
   // Scopes trigger a traversal with a new local cache for proof nodes
   if (isSCOPE(r) && currentRuleID)
   {
@@ -289,17 +306,32 @@ uint64_t DotPrinter::printInternal(
                                      pfLetClosed,
                                      thisScopeLet,
                                      cfaMap,
+                                     ancestors,
                                      proofNodeType);
     out << "\t" << childId << " -> " << currentRuleID << ";\n";
+    if (options::proofDotDAG() && ancestors.size() > currentAncestorsSize)
+    {
+      ancestors.resize(ancestors.size() - currentAncestorsSize);
+    }
   }
   else
   {
     const std::vector<std::shared_ptr<ProofNode>>& children = pn->getChildren();
     for (const std::shared_ptr<ProofNode>& c : children)
     {
-      uint64_t childId = printInternal(
-          out, c.get(), pfLetClosed, pfLetOpen, cfaMap, proofNodeType);
+      uint64_t childId = printInternal(out,
+                                       c.get(),
+                                       pfLetClosed,
+                                       pfLetOpen,
+                                       cfaMap,
+                                       ancestors,
+                                       proofNodeType);
       out << "\t" << childId << " -> " << currentRuleID << ";\n";
+
+      if (options::proofDotDAG() && ancestors.size() > currentAncestorsSize)
+      {
+        ancestors.resize(ancestors.size() - currentAncestorsSize);
+      }
     }
   }
 
